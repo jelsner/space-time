@@ -17,7 +17,7 @@ library(stars)
 ```
 
 Spatiotemporal arrays are stored in objects of class `stars`;  methods for class `stars` currently available are
-``` {r}
+```{r}
 methods(class = "stars")
 ```
 (tidyverse methods are only visible after loading package `tidyverse`).
@@ -250,6 +250,67 @@ controlled with the `crop` parameter to `st_crop` and `[.stars`.
 
 # Vector data cube example
 
+Create a simple space-time data frame.
+```{r}
+days <- seq(as.Date('2019-01-01'), as.Date('2019-01-10'), by = 1)
+
+df <- data.frame(x = rnorm(10), y = rnorm(10), t = days)
+
+df_sf <- st_as_sf(df, coords = c("x", "y"))
+df_st <- st_as_stars(df_sf)
+```
+
+# OSRM package
+https://github.com/rCarto/osrm
+
+# cartography package
+https://cran.r-project.org/web/packages/cartography/vignettes/cartography.html
+
+Get simple feature data frame and corresponding map tiles from OSM.
+```{r}
+library(sf)
+library(cartography)
+# path to the geopackage file embedded in cartography
+path_to_gpkg <- system.file("gpkg/mtq.gpkg", package = "cartography")
+# import to an sf object
+mtq <- st_read(dsn = path_to_gpkg, quiet = TRUE)
+# download osm tiles
+mtq.osm <- getTiles(
+  x = mtq, 
+  type = "osm", 
+  zoom = 11, 
+  crop = TRUE
+)
+```
+
+Plot only the OSM tiles
+```{r}
+tilesLayer(x = mtq.osm)
+```
+
+Plot the tiles and other layers.
+```{r}
+tilesLayer(x = mtq.osm)
+# plot municipalities (only borders are plotted)
+plot(st_geometry(mtq), col = NA, border = "grey", add=TRUE)
+# plot population
+propSymbolsLayer(
+  x = mtq, 
+  var = "POP", 
+  inches = 0.4, 
+  col = "brown4",
+  legend.pos = "topright",  
+  legend.title.txt = "Total population"
+)
+# layout
+layoutLayer(title = "Population Distribution in Martinique",
+            sources = "Sources: Insee and IGN, 2018\n© OpenStreetMap contributors.\nTiles style under CC BY-SA, www.openstreetmap.org/copyright.",
+            author = paste0("cartography ", packageVersion("cartography")),
+            frame = FALSE, north = FALSE, tabtitle = TRUE)
+# north arrow
+north(pos = "topleft")
+```
+
 Like `tbl_cube`, `stars` arrays have no limits to the number of dimensions they handle. An example is the origin-destination (OD) matrix, by time and travel mode.
 
 ## OD: space x space x travel mode x time x time
@@ -257,17 +318,18 @@ Like `tbl_cube`, `stars` arrays have no limits to the number of dimensions they 
 We create a 5-dimensional matrix of traffic between regions, by day, by time of day, and by travel mode. Having day and time of day each as dimension is an advantage when we want to compute patterns over the day, for a certain period.
 
 ```{r}
-nc = st_read(system.file("gpkg/nc.gpkg", package="sf")) 
-to = from = st_geometry(nc) # 100 polygons: O and D regions
-mode = c("car", "bike", "foot") # travel mode
-day = 1:100 # arbitrary
+nc <- st_read(system.file("gpkg/nc.gpkg", package = "sf")) 
+to <- st_geometry(nc) # 100 polygons: O and D regions
+from <- st_geometry(nc)
+mode <- c("car", "bike", "foot") # travel mode
+day <- 1:100 # arbitrary
 library(units)
-units(day) = as_units("days since 2015-01-01")
-hour = set_units(0:23, h) # hour of day
-dims = st_dimensions(origin = from, destination = to, mode = mode, day = day, hour = hour)
-(n = dim(dims))
-traffic = array(rpois(prod(n), 10), dim = n) # simulated traffic counts
-(st = st_as_stars(list(traffic = traffic),  dimensions = dims))
+units(day) <- as_units("days since 2015-01-01")
+hour <- set_units(0:23, h) # hour of day
+dims <- st_dimensions(origin = from, destination = to, mode = mode, day = day, hour = hour)
+(n <- dim(dims))
+traffic <- array(rpois(prod(n), 10), dim = n) # simulated traffic counts
+(st <- st_as_stars(list(traffic = traffic),  dimensions = dims))
 ```
 
 This array contains the simple feature geometries of origin and destination so that we can directly plot every slice without additional table joins. If we want to represent such an array as a `tbl_cube`, the simple feature geometry dimensions need to be replaced by indexes:
