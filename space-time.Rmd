@@ -3,6 +3,8 @@ title: "1. introduction"
 author: "Edzer Pebesma"
 output:
   html_document:
+editor_options: 
+  chunk_output_type: console
 ---
 
 Package `stars` provides infrastructure for _data cubes_, array data with labeled dimensions, with emphasis on arrays where some of the dimensions relate to time and/or space.
