@@ -1,11 +1,133 @@
 ---
-title: "1. introduction"
-author: "Edzer Pebesma"
+title: "Ian's World"
+author: "Ian and Jim"
 output:
   html_document:
 editor_options: 
   chunk_output_type: console
 ---
+
+Packages
+```{r}
+library(dplyr)
+library(tmap)
+library(sf)
+library(lubridate)
+```
+
+Get data from Ian's private location tracking server for June 15, 2019
+```{r}
+L <- "https://ianandashira.com/api/query?token=IKFDWWpEEJLZmpOrciHNlWE53PnyZScKpAq7nl88&date=2019-06-15"
+df <- jsonlite::fromJSON(L, flatten = TRUE) %>%
+  as.data.frame()
+```
+
+Get the time stamp as a time object.
+```{r}
+Time <- as_datetime(df$locations.properties.timestamp)
+```
+
+Get the spatial coordinates, speed, and convert to a simple feature data frame.
+```{r}
+Space <- matrix(unlist(df$locations.geometry.coordinates), 
+                ncol = 2, 
+                byrow = TRUE) %>%
+         data.frame()
+Speed <- df$locations.properties.speed
+Acc <- df$locations.properties.horizontal_accuracy
+
+SpaceTime <- data.frame(Lon = Space$X1, 
+                        Lat = Space$X2, 
+                        Time,
+                        Hour = hour(Time),
+                        Speed,
+                        Acc)
+
+df_sf <- st_as_sf(SpaceTime, coords = c("Lon", "Lat"), 
+                  crs = 4326)
+```
+
+Make a static map using **tmap**.
+```{r}
+tm_shape(df_sf) +
+  tm_dots(col = "Acc")
+
+tmap_mode("view")
+tmap_mode("plot")
+```
+
+Animate the map.
+```{r}
+tm_shape(df_sf) +
+  tm_dots() +
+  tm_facets(along = "Hour", free.coords = FALSE)
+
+tmap_animation(anim, delay = 25)
+```
+
+
+
+
+
+
+
+
+# OSRM package
+https://github.com/rCarto/osrm
+
+# cartography package
+https://cran.r-project.org/web/packages/cartography/vignettes/cartography.html
+
+Get simple feature data frame and corresponding map tiles from OSM.
+```{r}
+library(sf)
+library(cartography)
+# path to the geopackage file embedded in cartography
+path_to_gpkg <- system.file("gpkg/mtq.gpkg", package = "cartography")
+# import to an sf object
+mtq <- st_read(dsn = path_to_gpkg, quiet = TRUE)
+# download osm tiles
+mtq.osm <- getTiles(
+  x = mtq, 
+  type = "osm", 
+  zoom = 11, 
+  crop = TRUE
+)
+```
+
+Plot only the OSM tiles
+```{r}
+tilesLayer(x = mtq.osm)
+```
+
+Plot the tiles and other layers.
+```{r}
+tilesLayer(x = mtq.osm)
+# plot municipalities (only borders are plotted)
+plot(st_geometry(mtq), col = NA, border = "grey", add=TRUE)
+# plot population
+propSymbolsLayer(
+  x = mtq, 
+  var = "POP", 
+  inches = 0.4, 
+  col = "brown4",
+  legend.pos = "topright",  
+  legend.title.txt = "Total population"
+)
+# layout
+layoutLayer(title = "Population Distribution in Martinique",
+            sources = "Sources: Insee and IGN, 2018\n© OpenStreetMap contributors.\nTiles style under CC BY-SA, www.openstreetmap.org/copyright.",
+            author = paste0("cartography ", packageVersion("cartography")),
+            frame = FALSE, north = FALSE, tabtitle = TRUE)
+# north arrow
+north(pos = "topleft")
+```
+
+
+
+# STARS 
+
+Package from Edzar Pebesma.
 
 Package `stars` provides infrastructure for _data cubes_, array data with labeled dimensions, with emphasis on arrays where some of the dimensions relate to time and/or space.
 
@@ -247,69 +369,6 @@ cells not intersecting with North Carolina (sea) are set to `NA`
 values. For regular grids, the extent of the resulting `stars`
 object is also be reduced (cropped) by default; this can be
 controlled with the `crop` parameter to `st_crop` and `[.stars`.
-
-# Vector data cube example
-
-Create a simple space-time data frame.
-```{r}
-days <- seq(as.Date('2019-01-01'), as.Date('2019-01-10'), by = 1)
-
-df <- data.frame(x = rnorm(10), y = rnorm(10), t = days)
-
-df_sf <- st_as_sf(df, coords = c("x", "y"))
-df_st <- st_as_stars(df_sf)
-```
-
-# OSRM package
-https://github.com/rCarto/osrm
-
-# cartography package
-https://cran.r-project.org/web/packages/cartography/vignettes/cartography.html
-
-Get simple feature data frame and corresponding map tiles from OSM.
-```{r}
-library(sf)
-library(cartography)
-# path to the geopackage file embedded in cartography
-path_to_gpkg <- system.file("gpkg/mtq.gpkg", package = "cartography")
-# import to an sf object
-mtq <- st_read(dsn = path_to_gpkg, quiet = TRUE)
-# download osm tiles
-mtq.osm <- getTiles(
-  x = mtq, 
-  type = "osm", 
-  zoom = 11, 
-  crop = TRUE
-)
-```
-
-Plot only the OSM tiles
-```{r}
-tilesLayer(x = mtq.osm)
-```
-
-Plot the tiles and other layers.
-```{r}
-tilesLayer(x = mtq.osm)
-# plot municipalities (only borders are plotted)
-plot(st_geometry(mtq), col = NA, border = "grey", add=TRUE)
-# plot population
-propSymbolsLayer(
-  x = mtq, 
-  var = "POP", 
-  inches = 0.4, 
-  col = "brown4",
-  legend.pos = "topright",  
-  legend.title.txt = "Total population"
-)
-# layout
-layoutLayer(title = "Population Distribution in Martinique",
-            sources = "Sources: Insee and IGN, 2018\n© OpenStreetMap contributors.\nTiles style under CC BY-SA, www.openstreetmap.org/copyright.",
-            author = paste0("cartography ", packageVersion("cartography")),
-            frame = FALSE, north = FALSE, tabtitle = TRUE)
-# north arrow
-north(pos = "topleft")
-```
 
 Like `tbl_cube`, `stars` arrays have no limits to the number of dimensions they handle. An example is the origin-destination (OD) matrix, by time and travel mode.
 
