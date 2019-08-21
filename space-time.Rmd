@@ -15,9 +15,9 @@ library(sf)
 library(lubridate)
 ```
 
-Get data from Ian's private location tracking server for June 15, 2019
+Get data from Ian's private location tracking server for June 15, 2019. Changed to hosted file to hide API key.
 ```{r}
-L <- "https://ianandashira.com/api/query?token=IKFDWWpEEJLZmpOrciHNlWE53PnyZScKpAq7nl88&date=2019-06-15"
+L <- "https://www.dropbox.com/s/zx0w39gedhcjsib/2019-06-15.json?dl=1"
 df <- jsonlite::fromJSON(L, flatten = TRUE) %>%
   as.data.frame()
 ```
@@ -56,6 +56,90 @@ tm_shape(df_sf) +
 
 tmap_mode("plot")
 ```
+
+Make a map using Leaflet, using custom markers.
+```{r}
+library(leaflet)
+m <- leaflet() %>%
+  addCircleMarkers(data = df_sf) %>%
+ addProviderTiles(providers$CartoDB.Positron)
+m  # Print the map
+```
+
+There's a Leaflet plugin called LeafletPlayback that does almost exactly what we're trying to do. You can find it at https://github.com/hallahan/LeafletPlayback
+
+Here's a way to load the Leaflet plugin in R. From: https://segmentfault.com/a/1190000013495709
+
+In this example, you can see Ian's static location data and (on the Oregon coast) the demo tracks.
+```{r}
+library(htmltools)
+library(htmlwidgets)
+
+
+LeafletPlaybackPlugin <-
+  htmlDependency(
+    "LeafletPlayback",
+    "1.0.0",
+    src = c(href ="http://leafletplayback.theoutpost.io/"),
+    script = c("dist/LeafletPlayback.js", "data/demo/demo-tracks.js")
+  )
+
+registerPlugin <- function(map, plugin) {
+  map$dependencies <- c(map$dependencies, list(plugin))
+  map
+}
+
+
+leaflet() %>%
+  addCircleMarkers(data = df_sf) %>%
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  registerPlugin(LeafletPlaybackPlugin) %>%
+  onRender(
+    "
+    function(el, x) {
+      var playbackOptions = {
+        playControl: true,
+        dateControl: true,
+        sliderControl: true     
+      };
+      var playback = new L.playback(this, demoTracks, null, playbackOptions); 
+    } "
+)
+```
+
+LeafletPlayback requires a GeoJSON file to work. Converting from sf to GeoJSON is possible with geojsonio. 
+```{r}
+library(geojsonio)
+df_sfc <- st_cast(df_sf, "MULTIPOINT", group_or_split=TRUE, agr = "constant")
+df_geo <- geojson_json(df_sfc)
+head(df_geo)
+```
+
+However, LeafletPlayback requires a very specific type of GeoJSON to work:
+{
+  "type": "Feature",
+  "geometry": {
+    "type": "MultiPoint",
+    "coordinates": [/*array of [lng,lat] coordinates*/]
+  },
+  "properties": {
+    "time": [/*array of UNIX timestamps*/]
+  }
+}
+
+Another unsuccessful attempt.
+```{r}
+geojsontest1<- geojson_list(st_combine(df_sf$geometry))
+geojsontest2<- geojson_list(df_sf$time)
+geojsontest <- geojsontest1 + geojsontest2
+
+df_geo <- geojson_json(geojsontest, type = "FeatureCollection")
+
+```
+
+I created my own GeoJSON file in this directory that matches the parameters that LeafletPlayback uses: /ian.geojson 
+You can upload it here to see the LeafletPlayback working with my data: http://leafletplayback.theoutpost.io/examples/example_2.html
+
 
 Animate the map.
 ```{r}
