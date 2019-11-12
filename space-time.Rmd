@@ -13,6 +13,7 @@ library(dplyr)
 library(tmap)
 library(sf)
 library(lubridate)
+library(rnaturalearth)
 ```
 
 Get data from Ian's private location tracking server for June 15, 2019. Changed to hosted file to hide API key.
@@ -36,14 +37,14 @@ Space <- matrix(unlist(df$locations.geometry.coordinates),
 Speed <- df$locations.properties.speed
 Acc <- df$locations.properties.horizontal_accuracy
 
-SpaceTime <- data.frame(Lon = Space$X1, 
-                        Lat = Space$X2, 
+SpaceTime <- data.frame(lon = Space$X1, 
+                        lat = Space$X2, 
                         Time,
                         Hour = hour(Time),
                         Speed,
                         Acc)
 
-df_sf <- st_as_sf(SpaceTime, coords = c("Lon", "Lat"), 
+df_sf <- st_as_sf(SpaceTime, coords = c("lon", "lat"), 
                   crs = 4326)
 ```
 
@@ -66,137 +67,70 @@ m <- leaflet() %>%
 m  # Print the map
 ```
 
-There's a Leaflet plugin called LeafletPlayback that does almost exactly what we're trying to do. You can find it at https://github.com/hallahan/LeafletPlayback
-
-Here's a way to load the Leaflet plugin in R. From: https://segmentfault.com/a/1190000013495709
-
-In this example, you can see Ian's static location data and (on the Oregon coast) the demo tracks.
+Center ggmap near Ian's house.
 ```{r}
-library(htmltools)
-library(htmlwidgets)
-
-
-LeafletPlaybackPlugin <-
-  htmlDependency(
-    "LeafletPlayback",
-    "1.0.0",
-    src = c(href ="http://leafletplayback.theoutpost.io/"),
-    script = c("dist/LeafletPlayback.js", "data/demo/demo-tracks.js")
-  )
-
-registerPlugin <- function(map, plugin) {
-  map$dependencies <- c(map$dependencies, list(plugin))
-  map
-}
-
-
-leaflet() %>%
-  addCircleMarkers(data = df_sf) %>%
-  addProviderTiles(providers$CartoDB.Positron) %>%
-  registerPlugin(LeafletPlaybackPlugin) %>%
-  onRender(
-    "
-    function(el, x) {
-      var playbackOptions = {
-        playControl: true,
-        dateControl: true,
-        sliderControl: true     
-      };
-      var playback = new L.playback(this, demoTracks, null, playbackOptions); 
-    } "
-)
+register_google(key = "AIzaSyA7buW39is2slTxrL_Y6wXbkGuPv63RALw")
+homework <- get_map(location = c(-71.13, 42.38), maptype = "terrain", source = "google", zoom = 10, API_console_key = "AIzaSyA7buW39is2slTxrL_Y6wXbkGuPv63RALw")
+ggmap(homework)
 ```
 
-LeafletPlayback requires a GeoJSON file to work. Converting from sf to GeoJSON is possible with geojsonio. 
+See path of Ian's location throughout the day. 
 ```{r}
-library(geojsonio)
-df_sfc <- st_cast(df_sf, "MULTIPOINT", group_or_split=TRUE, agr = "constant")
-df_geo <- geojson_json(df_sfc)
-head(df_geo)
+ggmap(homework) + geom_path(data = SpaceTime, size = 1)
 ```
 
-However, LeafletPlayback requires a very specific type of GeoJSON to work:
-{
-  "type": "Feature",
-  "geometry": {
-    "type": "MultiPoint",
-    "coordinates": [/*array of [lng,lat] coordinates*/]
-  },
-  "properties": {
-    "time": [/*array of UNIX timestamps*/]
-  }
-}
-
-Another unsuccessful attempt.
+Animate dot of Ian's location throughout the day using gganimate. Some points are outside the range of this map.
 ```{r}
-geojsontest1<- geojson_list(st_combine(df_sf$geometry))
-geojsontest2<- geojson_list(df_sf$time)
-geojsontest <- geojsontest1 + geojsontest2
-
-df_geo <- geojson_json(geojsontest, type = "FeatureCollection")
-
+library(ggmap)
+library(ggploty)
+library(ggplot2)
+library(ggmap)
+library(gganimate)
+p <- ggmap(homework) + geom_point(data = SpaceTime, size = 1) + transition_time(SpaceTime$Time)
+animate(p,nframes = 50, fps = 20) #render
 ```
 
-I created my own GeoJSON file in this directory that matches the parameters that LeafletPlayback uses: /ian.geojson 
-You can upload it here to see the LeafletPlayback working with my data: http://leafletplayback.theoutpost.io/examples/example_2.html
-
-
-Animate the map.
+Linearly map Ian's location by minute. This creates a dataframe of 1440 entries, one for every minute of the day.
 ```{r}
-anim <- tm_shape(df_sf) +
-  tm_dots() +
-  tm_facets(along = "Hour", free.coords = FALSE)
+aim <- seq(as.POSIXct('2019-06-15 00:00:00'), as.POSIXct('2019-06-15 23:59:59'), by = "mins")
+length(aim)
+xa <- approx(as.POSIXct(SpaceTime$Time), method="linear", rule=2, SpaceTime$lat, xout=aim)$y
+ya <- approx(as.POSIXct(SpaceTime$Time), method="linear", rule=2, SpaceTime$lon, xout=aim)$y
 
-tmap_animation(anim, delay = 25)
+idfi <- as.data.frame(aim)
+idfi["lat"] <- xa
+idfi["lon"] <- ya
 ```
 
-# OSRM package
-https://github.com/rCarto/osrm
-
-# cartography package
-https://cran.r-project.org/web/packages/cartography/vignettes/cartography.html
-
-Get simple feature data frame and corresponding map tiles from OSM.
+Play Ian's minute-by-minute location with a wake effect.
 ```{r}
-library(sf)
-library(cartography)
-# path to the geopackage file embedded in cartography
-path_to_gpkg <- system.file("gpkg/mtq.gpkg", package = "cartography")
-# import to an sf object
-mtq <- st_read(dsn = path_to_gpkg, quiet = TRUE)
-# download osm tiles
-mtq.osm <- getTiles(
-  x = mtq, 
-  type = "osm", 
-  zoom = 11, 
-  crop = TRUE
-)
+p <- ggmap(homework) + geom_point(color="red", fill="grey", data = idfi, size = 4) + transition_time(idfi$aim) + labs(title = "Ian's Location",subtitle = "Time:{frame}", x = "Long", y = "Lat") + shadow_wake(wake_length = 0.10, size=0.5, falloff ="cubic-in", alpha = TRUE, fill="blue") 
+p
 ```
 
-Plot only the OSM tiles
+Set the "camera" to follow Ian's location through the day. gganimate takes a list of xmin, xmax, ymin, and ymax values via view_zoom_manual to define the frame. Let's do one frame for each hour. Please let me know if you would do this differently.
 ```{r}
-tilesLayer(x = mtq.osm)
-```
+# Set the bounding boxes such that they are larger than the location point. Important when Ian spends more than an hour in one place. 
+idfi <- idfi %>% 
+  mutate(xmin = lon - 0.5)
+idfi <- idfi  %>% 
+  mutate(xmax = lon + 0.5)
+idfi <- idfi  %>% 
+  mutate(ymin = lat - 0.5)
+idfi <- idfi  %>% 
+  mutate(ymax = lat + 0.5)
 
-Plot the tiles and other layers.
-```{r}
-tilesLayer(x = mtq.osm)
-# plot municipalities (only borders are plotted)
-plot(st_geometry(mtq), col = NA, border = "grey", add=TRUE)
-# plot population
-propSymbolsLayer(
-  x = mtq, 
-  var = "POP", 
-  inches = 0.4, 
-  col = "brown4",
-  legend.pos = "topright",  
-  legend.title.txt = "Total population"
-)
-# layout
-layoutLayer(title = "Population Distribution in Martinique",
-            sources = "Sources: Insee and IGN, 2018\n© OpenStreetMap contributors.\nTiles style under CC BY-SA, www.openstreetmap.org/copyright.",
-            author = paste0("cartography ", packageVersion("cartography")),
-            frame = FALSE, north = FALSE, tabtitle = TRUE)
-# north arrow
-north(pos = "topleft")
+# Find the mean of the bounding box every hour.
+xmin <- colMeans(matrix(idfi$xmin, nrow=60))
+ymin <- colMeans(matrix(idfi$ymin, nrow=60))
+xmax <- colMeans(matrix(idfi$xmax, nrow=60))
+ymax <- colMeans(matrix(idfi$ymax, nrow=60))
+
+newResult <- list(xmin = xmin, ymin = ymin, xmax = xmax, ymax = ymax)
+
+zoom <- get_map(location = c( -71.13, 42.38), maptype = "toner", source = "stamen", zoom = 12, force = TRUE)
+world<- get_map(location = c( -71.5, 42.38), maptype = "toner", source = "stamen", zoom = 8, force = TRUE)
+
+p <- ggmap(world, API_console_key = "AIzaSyA7buW39is2slTxrL_Y6wXbkGuPv63RALw") +  inset_ggmap(zoom) + geom_point(color="red", fill="grey", data = idfi,aes(y = idfi$lat, x= idfi$lon), size = 4) + transition_time(idfi$aim) + view_zoom_manual(1, 1, xmin = newResult$xmin, xmax = newResult$xmax, ymin = newResult$ymin, ymax = newResult$ymax, wrap = TRUE)
+p
 ```
