@@ -69,6 +69,8 @@ m  # Print the map
 
 Center ggmap near Ian's house.
 ```{r}
+library(ggmap)
+
 register_google(key = "AIzaSyA7buW39is2slTxrL_Y6wXbkGuPv63RALw")
 homework <- get_map(location = c(-71.13, 42.38), maptype = "terrain", source = "google", zoom = 10, API_console_key = "AIzaSyA7buW39is2slTxrL_Y6wXbkGuPv63RALw")
 ggmap(homework)
@@ -81,12 +83,13 @@ ggmap(homework) + geom_path(data = SpaceTime, size = 1)
 
 Animate dot of Ian's location throughout the day using gganimate. Some points are outside the range of this map.
 ```{r}
-library(ggmap)
 library(ggploty)
 library(ggplot2)
-library(ggmap)
 library(gganimate)
-p <- ggmap(homework) + geom_point(data = SpaceTime, size = 1) + transition_time(SpaceTime$Time)
+library(gifski)
+p <- ggmap(homework) + 
+  geom_point(data = SpaceTime, size = 1) + 
+  transition_time(SpaceTime$Time)
 animate(p,nframes = 50, fps = 20) #render
 ```
 
@@ -104,7 +107,11 @@ idfi["lon"] <- ya
 
 Play Ian's minute-by-minute location with a wake effect.
 ```{r}
-p <- ggmap(homework) + geom_point(color="red", fill="grey", data = idfi, size = 4) + transition_time(idfi$aim) + labs(title = "Ian's Location",subtitle = "Time:{frame}", x = "Long", y = "Lat") + shadow_wake(wake_length = 0.10, size=0.5, falloff ="cubic-in", alpha = TRUE, fill="blue") 
+p <- ggmap(homework) + 
+  geom_point(color="red", fill="grey", data = idfi, size = 4) + 
+  transition_time(idfi$aim) + 
+  labs(title = "Ian's Location",subtitle = "Time:{frame}", x = "Long", y = "Lat") + 
+  shadow_wake(wake_length = 0.10, size=0.5, falloff ="cubic-in", alpha = TRUE, fill="blue") 
 p
 ```
 
@@ -131,6 +138,10 @@ newResult <- list(xmin = xmin, ymin = ymin, xmax = xmax, ymax = ymax)
 zoom <- get_map(location = c( -71.13, 42.38), maptype = "toner", source = "stamen", zoom = 12, force = TRUE)
 world<- get_map(location = c( -71.5, 42.38), maptype = "toner", source = "stamen", zoom = 8, force = TRUE)
 
-p <- ggmap(world, API_console_key = "AIzaSyA7buW39is2slTxrL_Y6wXbkGuPv63RALw") +  inset_ggmap(zoom) + geom_point(color="red", fill="grey", data = idfi,aes(y = idfi$lat, x= idfi$lon), size = 4) + transition_time(idfi$aim) + view_zoom_manual(1, 1, xmin = newResult$xmin, xmax = newResult$xmax, ymin = newResult$ymin, ymax = newResult$ymax, wrap = TRUE)
+p <- ggmap(world, API_console_key = "AIzaSyA7buW39is2slTxrL_Y6wXbkGuPv63RALw") +  
+  inset_ggmap(zoom) + 
+  geom_point(color="red", fill="grey", data = idfi,aes(y = idfi$lat, x= idfi$lon), size = 4) + 
+  transition_time(idfi$aim) + 
+  view_zoom_manual(1, 1, xmin = newResult$xmin, xmax = newResult$xmax, ymin = newResult$ymin, ymax = newResult$ymax, wrap = TRUE)
 p
 ```
