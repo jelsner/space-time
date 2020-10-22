@@ -172,7 +172,7 @@ tmx_smooth <- calc(tmx_mean, fun = daily_smooth)
 
 ### Preparation
 
-To visualize the maximum temperatures throughout the year, first, we convert the raster brick to a data frame, including longitude and latitude and removing all time series with missing values (`NA`).
+To visualize the maximum temperatures throughout the year, first we convert the raster brick to a data frame, including longitude and latitude and removing all time series with missing values (`NA`).
 ```{r}
 tmx_mat <- as.data.frame(tmx_smooth, xy = TRUE, na.rm = TRUE)
 str(tmx_mat[, 1:10])
@@ -287,6 +287,86 @@ gifski(files, "tmx_spain.gif",
        width = 800, height = 700, 
        loop = FALSE, 
        delay = 0.05)
+```
+
+Try the above using PRISM data over the Southeast U.S.
+
+Get and manipulate PRISM data.
+```{r}
+library(prism)
+
+options(prism.path = "Data/PRISM")
+
+get_prism_dailys(
+  type = "tmax", 
+  minDate = "2008-08-19", 
+  maxDate = "2008-08-19", 
+  keepZip = FALSE 
+)
+
+tmax.r <- raster("Data/PRISM/PRISM_tmax_stable_4kmD2_20080819_bil/PRISM_tmax_stable_4kmD2_20080819_bil.bil") 
+
+tm_shape(tmax.r) +
+  tm_raster() 
+```
+```{r}
+library(USAboundaries)
+
+mp <- us_counties(states = c("FL", "GA", "AL")) %>%
+  st_cast("MULTILINESTRING") %>%
+  st_crop(xmin = -89, xmax = -80, ymin = 29, ymax = 33) 
+
+library(rgdal)
+
+e <- extent(-89, -80, 29, 33)
+tmax.r <- tmax.r %>%
+  crop(e)
+```
+
+Convert the raster to a data frame, including longitude and latitude and removing all time series with missing values (`NA`).
+```{r}
+tmx.df <- as.data.frame(tmax.r, xy = TRUE, na.rm = TRUE) %>%
+  set_names(c("lon", "lat", "Temp"))
+str(tmx.df)
+```
+
+Apply the `cut()` function with the breaks to all the columns with temperature data.
+```{r}
+ct <- c(-5, 0, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 40, 45)
+tmx.df <- tmx.df %>%
+  mutate(TempCut = cut(Temp, breaks = ct))
+str(tmx.df)
+```
+
+```{r}
+ggplot(tmx.df) + 
+         geom_raster(aes(x = lon, y = lat, fill = TempCut)) +
+         geom_sf(data = mp,
+                 colour = "grey50", size = .2) +
+  coord_sf(expand = FALSE) +
+  scale_fill_manual(values = col_spec(20), drop = FALSE) +
+  guides(fill = guide_colorsteps(barwidth = 30, 
+                                 barheight = 0.5,
+                                 title.position = "right",
+                                 title.vjust = .1)) +
+   theme_void() +
+   theme(legend.position = "top",
+      legend.justification = 1,
+      plot.caption = element_text(margin = margin(b = 5, t = 10, unit = "pt")),                
+      plot.title = element_text(size = 16, face = "bold", 
+                                margin = margin(b = 2, t = 5, unit = "pt")),
+     plot.subtitle = element_text(size = 13, 
+                                  margin = margin(b = 10, t = 5, unit = "pt"))) +
+   labs(title = "High temperature", 
+     subtitle = "August 8, 2008", 
+     caption = "Data: PRISM",
+     fill = "ºC")
+```
+
+Spatial autocorrelation range.
+```{r}
+library(blockCV)
+spatialAutoRange(tmax.r)
 ```
 
 # Ian's locations
