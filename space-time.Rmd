@@ -7,7 +7,7 @@ editor_options:
   chunk_output_type: console
 ---
 
-# Climate animation of maximum temperatures
+# Climate animation of daily high temperature
 
 From: https://dominicroye.github.io/en/2020/climate-animation-of-maximum-temperatures/
 
