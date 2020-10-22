@@ -290,6 +290,7 @@ gifski(files, "tmx_spain.gif",
        delay = 0.05)
 ```
 
+## PRISM data
 Try the above using PRISM data over the Southeast U.S.
 
 Get and manipulate PRISM data.
@@ -299,17 +300,19 @@ library(prism)
 options(prism.path = "Data/PRISM")
 
 get_prism_dailys(
-  type = "tmax", 
-  minDate = "2008-08-19", 
-  maxDate = "2008-08-19", 
+  type = "tmin", 
+  minDate = "2008-06-19", 
+  maxDate = "2008-06-20", 
   keepZip = FALSE 
 )
 
-tmax.r <- raster("Data/PRISM/PRISM_tmax_stable_4kmD2_20080819_bil/PRISM_tmax_stable_4kmD2_20080819_bil.bil") 
+tmax.r <- raster("Data/PRISM/PRISM_tmin_stable_4kmD2_20080619_bil/PRISM_tmin_stable_4kmD2_20080619_bil.bil") 
+tmax.r2 <- raster("Data/PRISM/PRISM_tmin_stable_4kmD2_20080620_bil/PRISM_tmin_stable_4kmD2_20080620_bil.bil") 
+tmax.b <- brick(tmax.r, tmax.r2)
 
 library(tmap) 
 
-tm_shape(tmax.r) +
+tm_shape(tmax.b) +
   tm_raster() 
 ```
 
@@ -320,10 +323,10 @@ mp <- us_counties(states = c("FL", "GA", "AL")) %>%
   st_cast("MULTILINESTRING") %>%
   st_crop(xmin = -89, xmax = -80, ymin = 29, ymax = 33) 
 
-tmax.r <- tmax.r %>%
+tmax.b <- tmax.b %>%
   crop(mp)
 
-tm_shape(tmax.r) +
+tm_shape(tmax.b) +
   tm_raster() 
 ```
 
@@ -371,9 +374,10 @@ Spatial autocorrelation range.
 ```{r}
 library(blockCV)
 
-sac <- spatialAutoRange(rasterLayer = tmax.r,
-                        sampleNumber = 10000,
+sac <- spatialAutoRange(rasterLayer = tmax.b,
+                        sampleNumber = 5000,
                         doParallel = TRUE,
+                        plotVariograms = TRUE,
                         showPlots = TRUE)
 
 sac$variograms$var_model
@@ -386,6 +390,8 @@ sac <- spatialAutoRange(rasterLayer = tmax.rp,
                         showPlots = TRUE)
 sac$variograms$var_model
 ```
+
+If the domain is to large, clear calm nights will result in a trend that will overwhelm the local spatial autocorrelation.
 
 # Ian's locations
 
