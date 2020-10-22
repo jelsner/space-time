@@ -17,6 +17,7 @@ library(raster)
 library(tidyverse)
 library(lubridate)
 library(ggthemes)
+library(rgdal) # before library(sf)
 library(sf)
 library(rnaturalearth)
 library(extrafont)
@@ -306,9 +307,12 @@ get_prism_dailys(
 
 tmax.r <- raster("Data/PRISM/PRISM_tmax_stable_4kmD2_20080819_bil/PRISM_tmax_stable_4kmD2_20080819_bil.bil") 
 
+library(tmap) 
+
 tm_shape(tmax.r) +
   tm_raster() 
 ```
+
 ```{r}
 library(USAboundaries)
 
@@ -316,11 +320,11 @@ mp <- us_counties(states = c("FL", "GA", "AL")) %>%
   st_cast("MULTILINESTRING") %>%
   st_crop(xmin = -89, xmax = -80, ymin = 29, ymax = 33) 
 
-library(rgdal)
-
-e <- extent(-89, -80, 29, 33)
 tmax.r <- tmax.r %>%
-  crop(e)
+  crop(mp)
+
+tm_shape(tmax.r) +
+  tm_raster() 
 ```
 
 Convert the raster to a data frame, including longitude and latitude and removing all time series with missing values (`NA`).
@@ -366,7 +370,21 @@ ggplot(tmx.df) +
 Spatial autocorrelation range.
 ```{r}
 library(blockCV)
-spatialAutoRange(tmax.r)
+
+sac <- spatialAutoRange(rasterLayer = tmax.r,
+                        sampleNumber = 10000,
+                        doParallel = TRUE,
+                        showPlots = TRUE)
+
+sac$variograms$var_model
+
+tmax.rp <- projectRaster(tmax.r, crs = "+proj=lcc +lat_1=33 +lat_2=45 +lat_0=39 +lon_0=-96 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs")
+
+sac <- spatialAutoRange(rasterLayer = tmax.rp,
+                        sampleNumber = 5000,
+                        doParallel = TRUE,
+                        showPlots = TRUE)
+sac$variograms$var_model
 ```
 
 # Ian's locations
