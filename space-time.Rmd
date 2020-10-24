@@ -293,23 +293,93 @@ gifski(files, "tmx_spain.gif",
 ## PRISM data
 Try the above using PRISM data over the Southeast U.S.
 
-Get and manipulate PRISM data.
+Bulk download all daily tmax for 1991 from ftp site: ftp://prism.nacse.org/daily/tmax/1991/
+
+Use the curl library to extract the directory listing
+```{r, eval=FALSE}
+library(curl)
+url <- "ftp://prism.nacse.org/daily/tmax/1991/"
+h <- new_handle(dirlistonly = TRUE)
+con <- curl(url, "r", h)
+tbl <- read.table(con, stringsAsFactors = TRUE, fill = TRUE)
+close(con)
+head(tbl)
+```
+
+Paste the relevant ones on to the url and use
+```{r, eval=FALSE}
+urls <- paste0(url, tbl[1:5,1])
+fls <- basename(urls)
+curl_fetch_disk(urls[1], fls[1])
+```
+
+Or get daily PRISM data with functions from the {prism} package for a single year.
 ```{r}
 library(prism)
 
-options(prism.path = "Data/PRISM")
+options(prism.path = "Data/PRISM/1992")
 
+t0 <- proc.time()
 get_prism_dailys(
-  type = "tmin", 
-  minDate = "2008-06-19", 
-  maxDate = "2008-06-20", 
+  type = "tmax", 
+  minDate = "1992-01-01", 
+  maxDate = "1992-12-31", 
   keepZip = FALSE 
 )
+proc.time() - t0
+```
 
-tmax.r <- raster("Data/PRISM/PRISM_tmin_stable_4kmD2_20080619_bil/PRISM_tmin_stable_4kmD2_20080619_bil.bil") 
+Create the folder and file names as character strings.
+```{r}
+library(lubridate)
+
+dates <- seq(as_date("1990-01-01"), 
+             as_date("1990-12-31"), 
+             by = "day")
+
+time_days <- yday(dates)
+file_days <- gsub("-", "", dates)
+yearC <- as.character(year(dates))
+
+folder_names <- paste0("PRISM_tmax_stable_4kmD2_", 
+                       file_days, 
+                       "_bil")
+file_names <- paste0("PRISM_tmax_stable_4kmD2_", 
+                       file_days, 
+                       "_bil.bil")
+
+
+```
+
+Read the rasters for one year and create a brick.
+```{r}
+library(here)
+tmax.b <- NULL
+for(i in 9:1){
+r <- raster(here("Data", 
+                 "PRISM", 
+                 yearC[i], 
+                 folder_names[i], 
+                 file_names[i]))
+tmax.b <- brick(r, tmax.b)
+}
+```
+
+Read as a raster.
+```{r}
+tmax.b <- NULL
+for(i in 19:20){
+tmax.r <- raster(paste0("Data/PRISM/PRISM_tmin_stable_4kmD2_200806", i, "_bil/PRISM_tmin_stable_4kmD2_200806", i, "_bil.bil"))
+tmax.b <- brick(tmax.r, tmax.b)
+}
+```
+
+```{r}
 tmax.r2 <- raster("Data/PRISM/PRISM_tmin_stable_4kmD2_20080620_bil/PRISM_tmin_stable_4kmD2_20080620_bil.bil") 
 tmax.b <- brick(tmax.r, tmax.r2)
+```
 
+```{r}
 library(tmap) 
 
 tm_shape(tmax.b) +
