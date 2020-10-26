@@ -25,6 +25,7 @@ library(showtext)
 library(RColorBrewer)
 library(gifski)
 library(ncdf4)
+library(here)
 ```
 
 ## Preparation
@@ -104,12 +105,6 @@ ggplot(data = df,
   scale_y_continuous(breaks = seq(5, 28, 2)) +
   labs(y = "maximum temperature", x = "", colour =  "") +
   theme_minimal()
-```
-
-Smooth (not used)
-```{r}
-df$yd <- 1:366
-df$est <- predict(loess(tmx ~ yd, span = .5, data = df), 1:366)
 ```
 
 Another smoother. https://stats.stackexchange.com/questions/68403/smooth-a-circular-periodic-time-series
@@ -239,7 +234,7 @@ ggplot(tmx_mat_cat) +
      fill = "ºC")
 ```
 
-## Animation
+### Animation
 
 The final animation consists of creating a gif from all the images of 366 days, in principle, the {gganimate} package could be used, but in my experience it is slower, since it requires a data frame in long format. In this example a long table would have more than seven million rows. 
 
@@ -291,50 +286,31 @@ gifski(files, "tmx_spain.gif",
 ```
 
 ## PRISM data
-Try the above using PRISM data over the Southeast U.S.
 
-Bulk download all daily tmax for 1991 from ftp site: ftp://prism.nacse.org/daily/tmax/1991/
+Try the above using PRISM data over the U.S. for four consecutive years.
 
-Use the curl library to extract the directory listing
-```{r, eval=FALSE}
-library(curl)
-url <- "ftp://prism.nacse.org/daily/tmax/1991/"
-h <- new_handle(dirlistonly = TRUE)
-con <- curl(url, "r", h)
-tbl <- read.table(con, stringsAsFactors = TRUE, fill = TRUE)
-close(con)
-head(tbl)
-```
-
-Paste the relevant ones on to the url and use
-```{r, eval=FALSE}
-urls <- paste0(url, tbl[1:5,1])
-fls <- basename(urls)
-curl_fetch_disk(urls[1], fls[1])
-```
-
-Or get daily PRISM data with functions from the {prism} package for a single year.
+Get daily PRISM data with functions from the {prism} package for a single year. About 20 minutes per year of daily data.
 ```{r}
 library(prism)
 
-options(prism.path = "Data/PRISM/1992")
+options(prism.path = "Data/PRISM/1993")
 
 t0 <- proc.time()
 get_prism_dailys(
   type = "tmax", 
-  minDate = "1992-01-01", 
-  maxDate = "1992-12-31", 
+  minDate = "1993-01-01", 
+  maxDate = "1993-12-31", 
   keepZip = FALSE 
 )
 proc.time() - t0
 ```
 
-Create the folder and file names as character strings.
+Create the folder and file names as character strings. Read the rasters for one year and create a stack. About 70 sec to read rasters and create a stack.
 ```{r}
-library(lubridate)
+t0 <- proc.time()
 
-dates <- seq(as_date("1990-01-01"), 
-             as_date("1990-12-31"), 
+dates <- seq(as_date("1993-01-01"), 
+             as_date("1993-12-31"), 
              by = "day")
 
 time_days <- yday(dates)
@@ -348,82 +324,214 @@ file_names <- paste0("PRISM_tmax_stable_4kmD2_",
                        file_days, 
                        "_bil.bil")
 
-
-```
-
-Read the rasters for one year and create a brick.
-```{r}
-library(here)
-tmax.b <- NULL
-for(i in 9:1){
+tmax.s <- NULL
+for(i in length(file_names):1){
 r <- raster(here("Data", 
                  "PRISM", 
                  yearC[i], 
                  folder_names[i], 
                  file_names[i]))
-tmax.b <- brick(r, tmax.b)
+on.exit(close(r))
+tmax.s <- stack(r, tmax.s)
+# print(dates[i])
 }
+
+tmaxDaily1993 <- tmax.s
+proc.time() - t0
 ```
 
-Read as a raster.
+Combine the yearly stacks. 1.5 secs for four years.
 ```{r}
-tmax.b <- NULL
-for(i in 19:20){
-tmax.r <- raster(paste0("Data/PRISM/PRISM_tmin_stable_4kmD2_200806", i, "_bil/PRISM_tmin_stable_4kmD2_200806", i, "_bil.bil"))
-tmax.b <- brick(tmax.r, tmax.b)
-}
+t0 <- proc.time()
+tmaxDaily <- stack(tmaxDaily1990, tmaxDaily1991, tmaxDaily1992, tmaxDaily1993)
+nlayers(tmaxDaily)
+proc.time() - t0
 ```
 
+## Calculate the average temperature
+
+Calculate the average maximum temperature for each day of the year. First create a vector indicating the day of the year for the entire time series with the `yday()` function from the {lubridate} package.
 ```{r}
-tmax.r2 <- raster("Data/PRISM/PRISM_tmin_stable_4kmD2_20080620_bil/PRISM_tmin_stable_4kmD2_20080620_bil.bil") 
-tmax.b <- brick(tmax.r, tmax.r2)
+time_days <- yday(seq(as_date("1990-01-01"), as_date("1993-12-31"), "day"))
 ```
 
+From the {raster} package we have the `stackApply()` function that allows us to apply another function on groups of layers, or rather, indexes. Since our dataset is large, we include this function in parallelization functions.
+
+For the parallelization we start and end always with the `beginCluster()` and `endCluster()`. In the first function we must indicate the number of cores we want to use. In this case, we use 4 cores.
+
+The `clusterR()` function executes a function in parallel. The first argument corresponds to the raster object, the second is the  function, and as list argument we pass the arguments of the `stackApply()` function: the indexes that create the groups and the function used for each of the groups. Adding the argument progress = 'text' shows a progress bar of the calculation process.
 ```{r}
-library(tmap) 
+t0 <- proc.time()
 
-tm_shape(tmax.b) +
-  tm_raster() 
+beginCluster()
+tmaxDailyAvg <- clusterR(tmaxDaily, 
+                         fun = stackApply, 
+                         args = list(indices = time_days, fun = mean),
+                         progress = 'text')
+endCluster()
+
+proc.time() - t0
 ```
 
+This took about 19 hr.
+
+Area of continental US: 8.1e6 km^2
+Area of Spain: .5e6 km2
+
+Write the raster to a file.
+```{r}
+writeRaster(tmaxDailyAvg, 
+            file = "tmaxDailyAvg.nc")
+```
+
+## Map the temperatures over the southeast
+
+Map the average high temperature for the first 6 days of the year over the southeast.
 ```{r}
 library(USAboundaries)
 
-mp <- us_counties(states = c("FL", "GA", "AL")) %>%
+mp <- us_counties(states = c("FL", "GA", "AL", "SC")) %>%
   st_cast("MULTILINESTRING") %>%
   st_crop(xmin = -89, xmax = -80, ymin = 29, ymax = 33) 
 
-tmax.b <- tmax.b %>%
+tmaxSE <- tmaxDailyAvg %>%
   crop(mp)
 
-tm_shape(tmax.b) +
-  tm_raster() 
+library(tmap)
+
+tm_shape(tmaxSE[[1:6]]) +
+  tm_raster() +
+tm_shape(mp) +
+  tm_lines(col = "gray70")
 ```
 
-Convert the raster to a data frame, including longitude and latitude and removing all time series with missing values (`NA`).
+## Smooth the temperature variability
+
+We extract a pixel from our dataset at coordinates -89º of longitude and 31º of latitude using the `extract()` function. The result is a matrix with a single row corresponding to the pixel and 366 columns of the days of the year. Then we create a data frame with a dummy date and the extracted maximum temperature.
 ```{r}
-tmx.df <- as.data.frame(tmax.r, xy = TRUE, na.rm = TRUE) %>%
-  set_names(c("lon", "lat", "Temp"))
-str(tmx.df)
+point_ts <- raster::extract(tmaxDailyAvg, 
+                            matrix(c(-89, 31), nrow = 1))
+dim(point_ts)
+```
+```{r}
+df <- data.frame(date = seq(as_date("2000-01-01"), as_date("2000-12-31"), "day"),
+                 tmax = point_ts[1, ])
 ```
 
-Apply the `cut()` function with the breaks to all the columns with temperature data.
+Visualize the average high temperatures by day of year.
 ```{r}
-ct <- c(-5, 0, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 40, 45)
-tmx.df <- tmx.df %>%
-  mutate(TempCut = cut(Temp, breaks = ct))
-str(tmx.df)
+ggplot(data = df, 
+       mapping = aes(date, tmax)) + 
+  geom_line() + 
+  scale_x_date(date_breaks = "month", date_labels = "%b") +
+  scale_y_continuous(breaks = seq(10, 36, 2)) +
+  labs(y = "maximum temperature", x = "", colour =  "") +
+  theme_minimal()
 ```
 
+Create and apply a function to smooth.
 ```{r}
-ggplot(tmx.df) + 
-         geom_raster(aes(x = lon, y = lat, fill = TempCut)) +
-         geom_sf(data = mp,
-                 colour = "grey50", size = .2) +
+daily_smooth <- function(x, f = 1/32){
+  
+  if(all(is.na(x))){
+   
+    return(x) 
+   
+  } else {
+  y <- c(x, x, x)
+  x.mid <- 1:366
+  offset <- 366
+  y.smooth <- lowess(y, f = f)
+  est <- y.smooth$y[x.mid + offset]
+
+  return(est)
+  
+  }
+}
+
+df$tmaxS <- daily_smooth(df$tmax)
+```
+
+Plot together
+```{r}
+dfL <- df %>% 
+       pivot_longer(c(2, 4), 
+                    names_to = "var", 
+                    values_to = "temp")
+
+ggplot(dfL, 
+       aes(date, temp, 
+           colour = var)) + 
+     geom_line() + 
+  scale_x_date(date_breaks = "month", date_labels = "%b") +
+  scale_y_continuous(breaks = seq(10, 36, 2)) +
+  scale_colour_manual(values = c("orange", "red", "black")) +
+  labs(y = "maximum temperature", x = "", colour =  "") +
+  theme_minimal()
+```
+
+As we see in the graph, the smoothed curve follows the original curve very well. 
+
+In the next step we apply our function to the raster brick with the `calc()` function. The function returns as many layers as those returned by the function used for each of the time series.
+
+About 3 minutes.
+```{r}
+t0 <- proc.time()
+tmaxDailyAvgSmooth <- calc(tmaxDailyAvg, 
+                           fun = daily_smooth)
+proc.time() - t0
+```
+
+## Visualization
+
+To visualize the maximum temperatures throughout the year, first we convert the raster brick to a data frame, including longitude and latitude and removing all time series with missing values (`NA`).
+```{r}
+t0 <- proc.time()
+df <- as.data.frame(rasterToPoints(tmaxDailyAvgSmooth))
+df <- set_names(df, 
+                nm = c("lon", "lat", str_c("D", 1:366)))
+head(df[, 1:10])
+proc.time() - t0
+```
+
+Second, we import the administrative boundaries with the `ne_countries()` function from the {rnaturalearth} package, limiting the extension to the region of the Iberian Peninsula, southern France and northern Africa.
+
+```{r}
+mp <- us_states() %>%
+  st_cast("MULTILINESTRING") %>%
+  st_crop(xmin = -125, xmax = -66, ymin = 24, ymax = 50)
+```
+
+Third, we create a vector with the day of the year as labels in order to include them later in the animation. In addition, we define the break points for the maximum temperature, adapted to the distribution of our data, to obtain a categorization with a total of 20 classes.
+```{r}
+lab <- as_date(0:365, origin = "2000-01-01") %>% 
+  format("%d %B")
+```
+
+Fourth, we apply the `cut()` function with the breaks to all the columns with temperature data of each day of the year.
+```{r}
+ct <- seq(-20, 48, by = 4)
+dfc <- df %>%
+  mutate_at(3:368, cut, breaks = ct)
+```
+
+Fifth we define the color ramp.
+```{r}
+col_spec <- colorRampPalette(rev(brewer.pal(11, "RdBu")))
+```
+
+### Static map
+
+Here we make a map of May 15 (day 136). We use the `aes_string()` function instead of `aes()` to use the column names in string format. With the `geom_raster()` function we add the gridded temperature data as the first layer of the graph and with `geom_sf()` the boundaries in {sf} class. Finally, the `guide_colorsteps()` function allows us to create a nice legend based on the classes created by the `cut()` function.
+```{r}
+ggplot(dfc) + 
+  geom_raster(aes_string("lon", "lat", fill = "D136")) +
+  geom_sf(data = mp,
+          colour = "grey70", size = 0.2) +
   coord_sf(expand = FALSE) +
-  scale_fill_manual(values = col_spec(20), drop = FALSE) +
+  scale_fill_manual(values = col_spec(17), drop = FALSE) +
   guides(fill = guide_colorsteps(barwidth = 30, 
-                                 barheight = 0.5,
+                                 barheight = .5,
                                  title.position = "right",
                                  title.vjust = .1)) +
    theme_void() +
@@ -434,11 +542,61 @@ ggplot(tmx.df) +
                                 margin = margin(b = 2, t = 5, unit = "pt")),
      plot.subtitle = element_text(size = 13, 
                                   margin = margin(b = 10, t = 5, unit = "pt"))) +
-   labs(title = "High temperature", 
-     subtitle = "August 8, 2008", 
-     caption = "Data: PRISM",
+   labs(title = "Average daily high temperature", 
+     subtitle = lab[136], 
+     caption = "Reference period 1990-1993. Data: PRISM",
      fill = "ºC")
 ```
+
+### Animation
+
+We use a loop over the columns and join all the created images with the {gifski} package.
+
+Before looping we create a vector with the time steps or names of the columns, and another vector with the name of the images, including the name of the folder. In order to obtain a list of images ordered by their number, we must maintain three figures, filling the positions on the left with zeros.
+```{r}
+time_step <- str_c("D", 1:366)
+files <- str_c("us_tmax/D", str_pad(1:366, 3, "left", "0"), ".png")
+```
+Lastly, we include the above plot construction in a for loop. This takes a few minutes to run.
+```{r}
+for(i in 1:366){
+
+ ggplot(dfc) + 
+         geom_raster(aes_string("lon", "lat", fill = time_step[i])) +
+         geom_sf(data = mp,
+                 colour = "grey70", size = .2) +
+  coord_sf(expand = FALSE) +
+  scale_fill_manual(values = col_spec(20), drop = FALSE) +
+  guides(fill = guide_colorsteps(barwidth = 30, 
+                                 barheight = .5,
+                                 title.position = "right",
+                                 title.vjust = .1)) +
+   theme_void() +
+   theme(legend.position = "top",
+         legend.justification = 1,
+         plot.caption = element_text(margin = margin(b = 5, t = 10, unit = "pt")),
+         plot.title = element_text(size = 16, face = "bold", 
+                                margin = margin(b = 2, t = 5, unit = "pt")),
+         plot.subtitle = element_text(size = 13, 
+                                  margin = margin(b = 10, t = 5, unit = "pt"))) +
+   labs(title = "Average high temperature during the year", 
+     subtitle = lab[i], 
+     caption = "Reference period 1990-1993. Data: PRISM",
+     fill = "ºC")
+
+  ggsave(files[i], width = 8.28, height = 7.33, type = "cairo")
+  
+}
+```
+
+After having created images for each day of the year, we only have to create the gif.
+```{r}
+gifski(files, "us_tmax.gif", 
+       width = 800, height = 700, 
+       loop = FALSE, 
+       delay = 0.05)
+```
+
 
 Spatial autocorrelation range.
 ```{r}
@@ -602,4 +760,24 @@ p <- ggmap(world, API_console_key = "AIzaSyA7buW39is2slTxrL_Y6wXbkGuPv63RALw") +
   transition_time(idfi$aim) + 
   view_zoom_manual(1, 1, xmin = newResult$xmin, xmax = newResult$xmax, ymin = newResult$ymin, ymax = newResult$ymax, wrap = TRUE)
 p
+```
+
+Bulk download all daily tmax for 1991 from ftp site: ftp://prism.nacse.org/daily/tmax/1991/
+
+Use the curl library to extract the directory listing
+```{r, eval=FALSE}
+library(curl)
+url <- "ftp://prism.nacse.org/daily/tmax/1991/"
+h <- new_handle(dirlistonly = TRUE)
+con <- curl(url, "r", h)
+tbl <- read.table(con, stringsAsFactors = TRUE, fill = TRUE)
+close(con)
+head(tbl)
+```
+
+Paste the relevant ones on to the url and use
+```{r, eval=FALSE}
+urls <- paste0(url, tbl[1:5,1])
+fls <- basename(urls)
+curl_fetch_disk(urls[1], fls[1])
 ```
