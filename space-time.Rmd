@@ -623,30 +623,13 @@ gifski(files, "us_tmax.gif",
 
 ## Aggregate the temperatures in space
 
-Extract grid cells by county and compute the average.
-```{r}
-mp <- us_counties(states = c("FL", "GA", "AL", "SC")) %>%
-  st_crop(xmin = -89, xmax = -80, ymin = 29, ymax = 33) 
-county.df <- as.data.frame(raster::extract(tmaxSE, mp, fun = "mean", na.rm = TRUE))
-county.df <- set_names(county.df, 
-                        nm = str_c("D", 1:366))
-
-county.sf <- st_as_sf(county.df, 
-                      geometry = mp$geometry)
-
-tm_shape(county.sf) +
-  tm_fill(col = c("D1", "D2", "D3", "D4")) +
-  tm_borders(col = "gray70")
-
-ggplot(county.sf) +
-  geom_sf(mapping = aes(fill = D1), col = "gray70") +
-  scale_fill_viridis_c()
-```
-
-Repeat for entire U.S. 1.5 hrs
+For entire U.S. 1.5 hrs
 ```{r}
 mp <- us_counties() %>%
   filter(!state_abbr %in% c("PR", "AK", "HI"))
+mp2 <- us_states() %>%
+  filter(!state_abbr %in% c("PR", "AK", "HI")) %>%
+  st_cast("MULTILINESTRING")
 t0 <- Sys.time()
 county.df <- as.data.frame(raster::extract(tmaxDailyAvgSmooth, mp, fun = "mean", na.rm = TRUE))
 Sys.time() - t0
@@ -665,6 +648,53 @@ ggplot(county.sf) +
   geom_sf(mapping = aes(fill = D110), col = "gray70", size = .1) +
   scale_fill_viridis_c()
 ```
+
+```{r}
+ct <- seq(-20, 45, by = 5)
+dfc <- county.sf %>%
+  mutate_at(1:366, cut, breaks = ct)
+col_spec <- colorRampPalette(rev(brewer.pal(11, "RdBu")))
+```
+
+Add other country borders. The package {rnaturalearth} provides a map of countries of the entire world. Use `ne_countries()` to pull country data and choose the scale.
+```{r}
+library(rnaturalearth)
+brdrs.sf <- ne_countries(returnclass = "sf", scale = "medium") %>%
+  st_cast("MULTILINESTRING") %>%
+  st_crop(xmin = -125, xmax = -66, ymin = 24, ymax = 50)
+```
+
+```{r}
+dfc <- dfc %>%
+  st_transform(crs = "+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=37.5 +lon_0=-96 +x_0=0 +y_0=0 +datum=NAD83 +units=m +no_defs
+")
+ggplot(dfc) + 
+  geom_sf(mapping = aes(fill = D1), col = "grey70", size = .05) +
+  geom_sf(data = brdrs.sf, col = "grey70", size = .1) +
+  geom_sf(data = mp2, col = "gray70", size = .2) +
+  scale_fill_manual(values = col_spec(17), drop = FALSE) +
+#  scale_fill_continuous_tableau(palette = "Red") +
+  guides(fill = guide_colorsteps(barwidth = 30, 
+                                 barheight = .5,
+                                 title.position = "right",
+                                 title.vjust = .1)) +
+   theme_void() +
+   theme(legend.position = "top",
+      legend.justification = 1,
+      plot.caption = element_text(margin = margin(b = 5, t = 10, unit = "pt")),                
+      plot.title = element_text(size = 16, face = "bold", 
+                                margin = margin(b = 2, t = 5, unit = "pt")),
+     plot.subtitle = element_text(size = 13, 
+                                  margin = margin(b = 10, t = 5, unit = "pt"))) +
+   labs(title = "Average daily high temperature", 
+     subtitle = lab[1], 
+     caption = "Reference period 1990-1993. Data: PRISM",
+     fill = "ºC")
+```
+
+
+
+
 
 Spatial autocorrelation range.
 ```{r}
