@@ -293,24 +293,26 @@ Get daily PRISM data with functions from the {prism} package for a single year. 
 ```{r}
 library(prism)
 
-options(prism.path = "Data/PRISM/1993")
+options(prism.path = "Data/PRISM/1996")
 
 t0 <- proc.time()
 get_prism_dailys(
   type = "tmax", 
-  minDate = "1993-01-01", 
-  maxDate = "1993-12-31", 
+  minDate = "1996-01-01", 
+  maxDate = "1996-12-31", 
   keepZip = FALSE 
 )
 proc.time() - t0
 ```
 
+Warning message: In download.file(url = uri, destfile = outFile, mode = "wb", quiet = TRUE) : URL 'http://services.nacse.org/prism/data/public/4km/tmax/19950825': status was 'Failure when receiving data from the peer'
+
 Create the folder and file names as character strings. Read the rasters for one year and create a stack. About 70 sec to read rasters and create a stack.
 ```{r}
 t0 <- proc.time()
 
-dates <- seq(as_date("1993-01-01"), 
-             as_date("1993-12-31"), 
+dates <- seq(as_date("1995-01-01"), 
+             as_date("1995-12-31"), 
              by = "day")
 
 time_days <- yday(dates)
@@ -336,14 +338,17 @@ tmax.s <- stack(r, tmax.s)
 # print(dates[i])
 }
 
-tmaxDaily1993 <- tmax.s
+tmaxDaily1995 <- tmax.s
 proc.time() - t0
 ```
 
 Combine the yearly stacks. 1.5 secs for four years.
 ```{r}
 t0 <- proc.time()
-tmaxDaily <- stack(tmaxDaily1990, tmaxDaily1991, tmaxDaily1992, tmaxDaily1993)
+tmaxDaily <- stack(tmaxDaily1990, 
+                   tmaxDaily1991, 
+                   tmaxDaily1992, 
+                   tmaxDaily1993)
 nlayers(tmaxDaily)
 proc.time() - t0
 ```
@@ -507,6 +512,10 @@ tmaxDailyAvgSmooth <- calc(tmaxDailyAvg,
 proc.time() - t0
 ```
 
+Now for a particular clear, calm cold night we can subtract that days average to get an anomaly map. 
+
+The range of spatial autocorrelation computed on anomaly maps should be shorter when low temperatures are below normal compared to when high temperatures are above normal.
+
 ## Visualization
 
 To visualize the maximum temperatures throughout the year, first we convert the raster brick to a data frame, including longitude and latitude and removing all time series with missing values (`NA`).
@@ -668,8 +677,8 @@ brdrs.sf <- ne_countries(returnclass = "sf", scale = "medium") %>%
 dfc <- dfc %>%
   st_transform(crs = "+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=37.5 +lon_0=-96 +x_0=0 +y_0=0 +datum=NAD83 +units=m +no_defs
 ")
-ggplot(dfc) + 
-  geom_sf(mapping = aes(fill = D1), col = "grey70", size = .05) +
+ggplot() + 
+  geom_sf(data = dfc, mapping = aes(fill = D180), col = "grey70", size = .05) +
   geom_sf(data = brdrs.sf, col = "grey70", size = .1) +
   geom_sf(data = mp2, col = "gray70", size = .2) +
   scale_fill_manual(values = col_spec(17), drop = FALSE) +
@@ -687,10 +696,55 @@ ggplot(dfc) +
      plot.subtitle = element_text(size = 13, 
                                   margin = margin(b = 10, t = 5, unit = "pt"))) +
    labs(title = "Average daily high temperature", 
-     subtitle = lab[1], 
+     subtitle = lab[180], 
      caption = "Reference period 1990-1993. Data: PRISM",
      fill = "ºC")
 ```
+
+Before looping we create a vector with the time steps or names of the columns, and another vector with the name of the images, including the name of the folder. In order to obtain a list of images ordered by their number, we must maintain three figures, filling the positions on the left with zeros.
+```{r}
+time_step <- str_c("D", 1:366)
+files <- str_c("us_tmax2/D", str_pad(1:366, 3, "left", "0"), ".png")
+```
+Lastly, we include the above plot construction in a for loop. This takes a few minutes to run.
+```{r}
+for(i in 1:366){
+
+ ggplot() + 
+      geom_sf(data = dfc, mapping = aes_string(fill = time_step[i]), col = "grey70", size = .05) +
+      geom_sf(data = brdrs.sf, col = "grey70", size = .1) +
+      geom_sf(data = mp2, col = "gray70", size = .2) +
+  scale_fill_manual(values = col_spec(17), drop = FALSE) +
+  guides(fill = guide_colorsteps(barwidth = 30, 
+                                 barheight = .5,
+                                 title.position = "right",
+                                 title.vjust = .1)) +
+   theme_void() +
+   theme(legend.position = "top",
+         legend.justification = 1,
+         plot.caption = element_text(margin = margin(b = 5, t = 10, unit = "pt")),
+         plot.title = element_text(size = 16, face = "bold", 
+                                margin = margin(b = 2, t = 5, unit = "pt")),
+         plot.subtitle = element_text(size = 13, 
+                                  margin = margin(b = 10, t = 5, unit = "pt"))) +
+   labs(title = "Average high temperature during the year", 
+     subtitle = lab[i], 
+     caption = "Reference period 1990-1993. Data: PRISM",
+     fill = "ºC")
+
+  ggsave(files[i], width = 8.28, height = 7.33, type = "cairo")
+  
+}
+```
+
+After having created images for each day of the year, we only have to create the gif.
+```{r}
+gifski(files, "us_tmax2.gif", 
+       width = 800, height = 700, 
+       loop = FALSE, 
+       delay = 0.05)
+```
+
 
 
 
