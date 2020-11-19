@@ -32,12 +32,12 @@ Get daily PRISM data with functions from the {prism} package for a single year. 
 library(prism)
 
 t0 <- proc.time()
-for(i in 2010:2019){
+for(i in 2019:2019){
   print(i)
   options(prism.path = paste0("Data/PRISM/", i))
 
   get_prism_dailys(
-    type = "tmax", 
+    type = "ppt", 
     minDate = paste0(i, "-01-01"), 
     maxDate = paste0(i, "-12-31"), 
     keepZip = FALSE 
@@ -284,19 +284,19 @@ ggplot() +
                                   margin = margin(b = 10, t = 5, unit = "pt"))) +
    labs(title = "Average high temperature", 
      subtitle = lab[135], 
-     caption = "Reference period 1990-2009. Data: PRISM",
+     caption = "Reference period 1990-2019. Data: PRISM",
      fill = "ºC")
 ```
 
 Before looping we create a vector with the time steps or names of the columns, and another vector with the name of the images, including the name of the folder. In order to obtain a list of images ordered by their number, we must maintain three figures, filling the positions on the left with zeros.
 ```{r}
-time_step <- str_c("D", 1:365)
-files <- str_c("us_tmax2/D", str_pad(1:365, 3, "left", "0"), ".png")
+time_step <- str_c("D", 1:366)
+files <- str_c("us_tmax2/D", str_pad(1:366, 3, "left", "0"), ".png")
 ```
 
 Lastly, we include the above plot construction in a for loop. This takes a few minutes to run.
 ```{r}
-for(i in 1:365){
+for(i in 1:366){
 
  ggplot() + 
       geom_sf(data = dfc, mapping = aes_string(fill = time_step[i]), col = "grey70", size = .05) +
@@ -317,7 +317,7 @@ for(i in 1:365){
                                   margin = margin(b = 10, t = 5, unit = "pt"))) +
    labs(title = "Average daily high temperature", 
      subtitle = lab[i], 
-     caption = "Reference period 1990-2009. Data: PRISM",
+     caption = "Reference period 1990-2019. Data: PRISM",
      fill = "ºC")
 
   ggsave(files[i], width = 8.28, height = 7.33, type = "cairo")
@@ -451,4 +451,55 @@ gifski(files, "us_tmax.gif",
        width = 800, height = 700, 
        loop = FALSE, 
        delay = 0.05)
+```
+
+## Create a {stars} object using tmax and ppt from 2019
+
+```{r}
+library(stars)
+
+j = 2019
+dates <- seq(as_date(paste0(j, "-01-01")), 
+             as_date(paste0(j, "-12-31")), 
+             by = "day")
+
+file_days <- gsub("-", "", dates)
+
+yearC <- paste0(as.character(year(dates)), "/")
+
+folder_names <- paste0("PRISM_tmax_stable_4kmD2_", file_days, "_bil/")
+file_names <- paste0("PRISM_tmax_stable_4kmD2_", file_days, "_bil.bil")
+file_list <- paste0("Data/", "PRISM/", yearC, folder_names, file_names)
+
+folder_names2 <- paste0("PRISM_ppt_stable_4kmD2_", file_days, "_bil/")
+file_names2 <- paste0("PRISM_ppt_stable_4kmD2_", file_days, "_bil.bil")
+file_list2 <- paste0("Data/", "PRISM/", yearC, folder_names2, file_names2)
+
+t0 <- proc.time()
+tmax <- read_stars(file_list, along = list(time = dates)) %>%
+  setNames("MaxTemp")
+prcp <- read_stars(file_list2, along = list(time = dates)) %>%
+  setNames("Precip")
+tp.stars <- c(tmax, prcp)
+proc.time() - t0
+
+tp.stars
+
+qtm(tp.stars["MaxTemp",,,1:12])
+
+```
+
+```{r}
+library(ggplot2)
+library(viridis)
+## Loading required package: viridisLite
+library(ggthemes)
+ggplot() +  
+  geom_stars(data = tp.stars[1], alpha = .8, downsample = c(10, 10, 1)) + 
+  facet_wrap("time") +
+  scale_fill_viridis() +
+  coord_equal() +
+  theme_map() +
+  theme(legend.position = "bottom") +
+  theme(legend.key.width = unit(2, "cm"))
 ```
