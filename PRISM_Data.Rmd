@@ -494,8 +494,18 @@ library(ggplot2)
 library(viridis)
 ## Loading required package: viridisLite
 library(ggthemes)
+
 ggplot() +  
   geom_stars(data = tp.stars[1], alpha = .8, downsample = c(10, 10, 1)) + 
+  facet_wrap("time") +
+  scale_fill_viridis() +
+  coord_equal() +
+  theme_map() +
+  theme(legend.position = "bottom") +
+  theme(legend.key.width = unit(2, "cm"))
+
+ggplot() +  
+  geom_stars(data = log(tp.stars[2]), alpha = .8, downsample = c(10, 10, 1)) + 
   facet_wrap("time") +
   scale_fill_viridis() +
   coord_equal() +
