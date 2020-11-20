@@ -512,4 +512,47 @@ ggplot() +
   theme_map() +
   theme(legend.position = "bottom") +
   theme(legend.key.width = unit(2, "cm"))
+
+tmap_leaflet(
+  tm_shape(tp.stars["MaxTemp",,,1:3]) + 
+  tm_raster() + 
+  tm_facets(as.layers = TRUE)
+)
+```
+
+Filter then plot
+```{r}
+library(cubelyr)
+
+X <- filter(tp.stars, x > -90, y < 32) 
+
+ggplot() +  
+  geom_stars(data = X[1], alpha = .8, downsample = c(1, 1, 14)) + 
+  facet_wrap("time") +
+  scale_fill_viridis() +
+  coord_equal() +
+  theme_map() +
+  theme(legend.position = "bottom") +
+  theme(legend.key.width = unit(2, "cm"))
+```
+
+Crop to state boundary
+```{r}
+library(USAboundaries)
+
+FL.sf <- us_states(states = "Florida",
+                   resolution = "low") %>%
+  st_transform(crs = st_crs(tp.stars))
+
+X <- st_crop(tp.stars, FL.sf, crop = TRUE)
+X <- filter(X, time >= ymd("2019-05-01"), time <= ymd("2019-05-31"))
+
+ggplot() +  
+  geom_stars(data = X[1], alpha = .8, downsample = c(1, 1, 1)) + 
+  facet_wrap("time") +
+  scale_fill_distiller(palette = "RdBu") +
+  coord_equal() +
+  theme_map() +
+  theme(legend.position = "bottom") +
+  theme(legend.key.width = unit(2, "cm"))
 ```
