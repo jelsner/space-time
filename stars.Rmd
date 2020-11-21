@@ -1,0 +1,173 @@
+---
+title: "Learning the {stars} package"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+# Learning the {stars} package
+
+```{r}
+library(stars)
+library(tidyverse)
+library(lubridate)
+library(rgdal) # before library(sf)
+library(sf)
+library(rnaturalearth)
+library(here)
+```
+
+Get daily PRISM data with functions from the {prism} package for a single year. About 20 minutes per year of daily data.
+```{r}
+library(prism)
+
+t0 <- proc.time()
+for(i in 2019:2019){
+  print(i)
+  options(prism.path = paste0("Data/PRISM/", i))
+
+  get_prism_dailys(
+    type = "tmin", 
+    minDate = paste0(i, "-01-01"), 
+    maxDate = paste0(i, "-12-31"), 
+    keepZip = FALSE 
+  )
+}
+proc.time() - t0
+```
+## Create a {stars} object using tmax and ppt from 2019
+
+```{r}
+library(stars)
+
+j = 2019
+dates <- seq(as_date(paste0(j, "-01-01")), 
+             as_date(paste0(j, "-12-31")), 
+             by = "day")
+
+file_days <- gsub("-", "", dates)
+
+yearC <- paste0(as.character(year(dates)), "/")
+
+folder_names <- paste0("PRISM_tmax_stable_4kmD2_", file_days, "_bil/")
+file_names <- paste0("PRISM_tmax_stable_4kmD2_", file_days, "_bil.bil")
+file_list <- paste0("Data/", "PRISM/", yearC, folder_names, file_names)
+
+folder_names2 <- paste0("PRISM_ppt_stable_4kmD2_", file_days, "_bil/")
+file_names2 <- paste0("PRISM_ppt_stable_4kmD2_", file_days, "_bil.bil")
+file_list2 <- paste0("Data/", "PRISM/", yearC, folder_names2, file_names2)
+
+t0 <- proc.time()
+tmax <- read_stars(file_list, along = list(time = dates)) %>%
+  setNames("MaxTemp")
+prcp <- read_stars(file_list2, along = list(time = dates)) %>%
+  setNames("Precip")
+tp.stars <- c(tmax, prcp)
+proc.time() - t0
+
+tp.stars
+
+qtm(tp.stars["MaxTemp",,,1:12])
+
+```
+
+```{r}
+library(ggplot2)
+library(viridis)
+## Loading required package: viridisLite
+library(ggthemes)
+
+ggplot() +  
+  geom_stars(data = tp.stars[1], alpha = .8, downsample = c(10, 10, 1)) + 
+  facet_wrap("time") +
+  scale_fill_viridis() +
+  coord_equal() +
+  theme_map() +
+  theme(legend.position = "bottom") +
+  theme(legend.key.width = unit(2, "cm"))
+
+ggplot() +  
+  geom_stars(data = log(tp.stars[2]), alpha = .8, downsample = c(10, 10, 1)) + 
+  facet_wrap("time") +
+  scale_fill_viridis() +
+  coord_equal() +
+  theme_map() +
+  theme(legend.position = "bottom") +
+  theme(legend.key.width = unit(2, "cm"))
+
+tmap_leaflet(
+  tm_shape(tp.stars["MaxTemp",,,1:3]) + 
+  tm_raster() + 
+  tm_facets(as.layers = TRUE)
+)
+```
+
+Filter then plot
+```{r}
+library(cubelyr)
+
+X <- filter(tp.stars, x > -90, y < 32) 
+
+ggplot() +  
+  geom_stars(data = X[1], alpha = .8, downsample = c(1, 1, 14)) + 
+  facet_wrap("time") +
+  scale_fill_viridis() +
+  coord_equal() +
+  theme_map() +
+  theme(legend.position = "bottom") +
+  theme(legend.key.width = unit(2, "cm"))
+```
+
+Crop to state boundary
+```{r}
+library(USAboundaries)
+
+FL.sf <- us_states(states = "Florida",
+                   resolution = "low") %>%
+  st_transform(crs = st_crs(tp.stars))
+
+X <- st_crop(tp.stars, FL.sf, crop = TRUE)
+X <- filter(X, time >= ymd("2019-05-01"), time <= ymd("2019-05-31"))
+
+ggplot() +  
+  geom_stars(data = X[2], alpha = .8, downsample = c(1, 1, 1)) + 
+  facet_wrap("time") +
+  scale_fill_distiller(palette = "RdBu") +
+  coord_equal() +
+  theme_map() +
+  theme(legend.position = "bottom") +
+  theme(legend.key.width = unit(2, "cm"))
+```
+
+Convert stars to raster brick.
+```{r}
+X.b <- as(X, "Raster")
+X.b <- as(X["Precip",,,], "Raster")
+```
+
+Spatial autocorrelation range.
+```{r}
+library(blockCV)
+
+sac <- spatialAutoRange(rasterLayer = X.b[[2]],
+                        sampleNumber = 5000,
+                        doParallel = TRUE,
+                        plotVariograms = TRUE,
+                        showPlots = TRUE)
+
+sac$variograms$var_model
+
+X.b <- projectRaster(X.b, crs = "+proj=lcc +lat_1=33 +lat_2=45 +lat_0=39 +lon_0=-96 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs")
+
+for(i in 1:31){
+sac <- spatialAutoRange(rasterLayer = X.b[[i]],
+                        sampleNumber = 5000,
+                        doParallel = TRUE,
+                        showPlots = FALSE)
+print(sac$variograms$var_model$range[2])
+}
+```
+
+If the domain is too large, clear calm nights will result in a trend that will overwhelm the local spatial autocorrelation.
+
+
