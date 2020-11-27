@@ -214,24 +214,60 @@ data(air)
 Data source: https://usafacts.org/visualizations/coronavirus-covid-19-spread-map/
 ```{r}
 library(tidyverse)
+library(stars)
+library(USAboundaries)
 
 pop <- read_csv(file = "covid_county_population_usafacts.csv") %>%
   filter(State == "FL" & countyFIPS != 0)
 deaths <- read_csv(file = "covid_deaths_usafacts.csv") %>%
   filter(State == "FL" & countyFIPS != 0)
-deathrate <- deaths[, 5:309]/pop$population * 1000
+deathrate <- deaths[, 5:ncol(deaths)]/pop$population * 1000
 
-time <- seq(as.Date("2020-01-22"), as.Date("2020-11-21"), by = "day")
+days <- seq(as.Date(names(deaths)[5], format = "%m/%d/%y"),
+            as.Date(names(deaths)[ncol(deaths)], format = "%m/%d/%y"), 
+            by = "day")
 space <- us_counties(states = "Florida",
                      resolution = "low") %>%
   mutate(countyFIPS = as.double(paste0(statefp, countyfp))) %>%
   arrange(countyFIPS)
 
-d <- st_dimensions(location = space$geometry, time = dates)
-( covid.st <- st_as_stars(list(dr = as.matrix(deathrate)), dimensions = d) )
+d <- st_dimensions(location = space$geometry, time = days)
 
+( covid.st <- st_as_stars(list(dr = as.matrix(deathrate)), dimensions = d) )
+```
+
+Make some maps.
+```{r}
 image(aperm(covid.st))
 
+CountyOrder <- order(covid.st[,,309]$dr)
+X <- covid.st[,CountyOrder,]
+ylabs <- space$name[CountyOrder]
+
+image(aperm(X))
+
+X.df <- as.data.frame(X$dr)
+X.df$Counties <- factor(space$name[CountyOrder], levels = space$name[CountyOrder])
+
+library(reshape2)
+X.df2 <- melt(X.df, id.vars = "Counties") %>%
+  mutate(Date = as.Date(variable, format = "%m/%d/%y")) %>%
+  filter(Date >= as.Date("2020-09-28"))
+
+ggplot(data = X.df2,
+       mapping = aes(x = Date, y = Counties, fill = value)) +
+  geom_raster() +
+  scale_fill_distiller(name = "", direction = 1) +
+  scale_x_date(date_breaks = "1 week", date_labels = "%m/%d") +
+  ylab("") + xlab("Month/Day") +
+  labs(title = "Cumulative COVID-19 deaths (per 1000 people) in Florida counties", 
+       subtitle = "Ordered from highest to lowest on November 25, 2020",
+       caption = "Data source: https://usafacts.org/visualizations/coronavirus-covid-19-spread-map/") +
+  theme_minimal()
+```
+
+Other plots
+```{r}
 ggplot() +  
   geom_stars(data = covid.st[,,300]) + 
   facet_wrap("time") +
@@ -275,7 +311,9 @@ library(barRacer)
 
 bar_chart_race(gapminder::gapminder, country, pop, year, title = "Population over time")
 
-days <- seq(as.Date("2020-05-01"), as.Date("2020-11-21"), by = "day")
+days <- seq(as.Date("2020-05-01"), 
+            as.Date("2020-11-25"), 
+            by = "day")
 st.df <- covid.st %>% 
   filter(time %in% days) %>%
   as.data.frame() %>% 
@@ -286,7 +324,7 @@ bar_chart_race(df = st.df,
                val_col = dr, 
                time_col = time, 
                max_bars = 67,
-               title = "Covid death rates (/100,000)")
+               title = "Covid death rates (/1000)")
 ```
 
 Modify the code
