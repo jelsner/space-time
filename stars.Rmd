@@ -9,6 +9,7 @@ editor_options:
 
 ```{r}
 library(stars)
+library(raster)
 library(tidyverse)
 library(lubridate)
 library(rgdal) # before library(sf)
@@ -151,6 +152,67 @@ plot(circle, add = TRUE)
 
 X <- st_crop(X, circle, crop = TRUE)
 ```
+
+## Create a {stars} object from the tornado data
+
+Import the data and create a raster layer containg the annual count for each year.
+```{r}
+Tracks.sf <- st_read(dsn = "Data/1950-2018-torn-aspath")
+```
+
+Next we project the geographic coordinate reference system to a specific Lambert conic conformal projection. The spatial units are set to meters.
+```{r}
+Tracks.sf <- st_transform(Tracks.sf, 
+                          crs = "+proj=lcc +lat_1=60 +lat_2=30 +lon_0=-90 +units=m")
+```
+
+Next set the raster domain and assign a resolution of one degree in longitude and one degree in latitude. Check the extent of the raster with the `extent()` function.
+```{r}
+frame <- raster(xmn = -125, xmx = -67, ymn = 24, ymx = 50)
+res(frame) <- 2
+frame.st <- st_as_stars(frame)
+```
+
+Convert the paths to the same CRS.
+```{r}
+Paths.sf <- st_transform(Paths.sf,
+                         crs = "+proj=longlat +datum=WGS84 +no_defs")
+```
+
+Use the `rasterize()` function to count the number of times each raster cell contains a tornado genesis location. The first argument is the spatial data frame (dough; here a simple feature data frame) and the second is the raster without values (cooking cutter). The argument `field =` specifies a column name in the spatial data frame (here just an identifier) and the argument `fun =` specifies what to do (here simply count the unique instances of the field in each cell).
+```{r}
+counts.s <- NULL
+for(year in 1981:1990){
+  print(year)
+  tracks <- Tracks.sf %>%
+    filter(yr == year)
+  r <- rasterize(tracks, frame, field = "om", fun = 'count', background = 0)
+  counts.s <- stack(r, counts.s)
+}
+
+counts.st <- st_as_stars(counts.s)
+names(counts.st) <- "count"
+
+years <- seq(as_date("1981-01-01"), 
+             as_date("1990-12-31"), 
+             by = "year")
+
+( counts.st <- st_set_dimensions(counts.st, which = 3, values = year(years), names = "year") )
+
+
+plot(counts.st)
+
+ggplot() +  
+  geom_stars(data = counts.st) + 
+  facet_wrap("year") +
+  scale_fill_viridis_c() +
+  coord_sf() +
+  theme_map() +
+  theme(legend.position = "bottom") +
+  theme(legend.key.width = unit(2, "cm"))
+
+```
+
 
 ## Compute the range of the spatial autocorrelation 
 
