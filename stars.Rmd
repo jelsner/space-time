@@ -153,17 +153,11 @@ plot(circle, add = TRUE)
 X <- st_crop(X, circle, crop = TRUE)
 ```
 
-## Create a {stars} object from the tornado data
+## Create a {stars} object from the tornado data using a regular grid
 
 Import the data and create a raster layer containg the annual count for each year.
 ```{r}
 Tracks.sf <- st_read(dsn = "Data/1950-2018-torn-aspath")
-```
-
-Next we project the geographic coordinate reference system to a specific Lambert conic conformal projection. The spatial units are set to meters.
-```{r}
-Tracks.sf <- st_transform(Tracks.sf, 
-                          crs = "+proj=lcc +lat_1=60 +lat_2=30 +lon_0=-90 +units=m")
 ```
 
 Next set the raster domain and assign a resolution of one degree in longitude and one degree in latitude. Check the extent of the raster with the `extent()` function.
@@ -173,7 +167,7 @@ res(frame) <- 2
 frame.st <- st_as_stars(frame)
 ```
 
-Convert the paths to the same CRS.
+Convert the paths to the same CRS. NOT USED.
 ```{r}
 Paths.sf <- st_transform(Paths.sf,
                          crs = "+proj=longlat +datum=WGS84 +no_defs")
@@ -204,6 +198,66 @@ plot(counts.st)
 
 ggplot() +  
   geom_stars(data = counts.st) + 
+  facet_wrap("year") +
+  scale_fill_viridis_c() +
+  coord_sf() +
+  theme_map() +
+  theme(legend.position = "bottom") +
+  theme(legend.key.width = unit(2, "cm"))
+
+library(USAboundaries)
+
+SE.sf <- us_states(states = c("Florida", "Georgia", "Alabama"),
+                   resolution = "low") %>%
+  st_transform(crs = st_crs(counts.st))
+
+X <- st_crop(counts.st, SE.sf, crop = TRUE)
+
+ggplot() +  
+  geom_stars(data = X, alpha = .8, downsample = c(1, 1, 1)) + 
+  facet_wrap("year") +
+  scale_fill_viridis_c() +
+  coord_equal() +
+  theme_map() +
+  theme(legend.position = "bottom") +
+  theme(legend.key.width = unit(2, "cm"))
+
+```
+
+## Create a {stars} object from the tornado data using county polygons
+
+```{r}
+Tracks.sf <- st_read(dsn = "Data/1950-2018-torn-aspath") %>%
+  filter(yr >= 1981 & yr <= 1992) 
+
+Counties.sf <- us_counties(resolution = "low") %>%
+  filter(!state_name %in% c("Alaska", "Hawaii", "Puerto Rico"))
+
+counts.v <- NULL
+for(year in 1981:1990){
+  print(year)
+  tracks <- Tracks.sf %>%
+    filter(yr == year)
+  mtrx <- st_intersects(Counties.sf, 
+                        tracks, 
+                        sparse = FALSE)
+  counts.v <- c(rowSums(mtrx), counts.v)
+}
+
+years <- year(seq(as_date("1981-01-01"), 
+                  as_date("1990-12-31"), 
+                  by = "year"))
+
+d <- st_dimensions(location = Counties.sf$geometry, 
+                   year = years)
+
+( counts.st <- st_as_stars(list(counts = matrix(counts.v, ncol = length(years))), dimensions = d) )
+
+
+counts.st <- counts.st %>%
+  st_transform(crs = "+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=37.5 +lon_0=-96 +x_0=0 +y_0=0 +datum=NAD83 +units=m +no_defs")
+ggplot() +  
+  geom_stars(data = counts.st, alpha = .8, downsample = c(1, 1, 1)) + 
   facet_wrap("year") +
   scale_fill_viridis_c() +
   coord_sf() +
