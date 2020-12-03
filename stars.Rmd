@@ -181,7 +181,7 @@ for(year in 1981:1990){
   tracks <- Tracks.sf %>%
     filter(yr == year)
   r <- rasterize(tracks, frame, field = "om", fun = 'count', background = 0)
-  counts.s <- stack(r, counts.s)
+  counts.s <- stack(counts.s, r)
 }
 
 counts.st <- st_as_stars(counts.s)
@@ -228,24 +228,29 @@ ggplot() +
 
 ```{r}
 Tracks.sf <- st_read(dsn = "Data/1950-2018-torn-aspath") %>%
-  filter(yr >= 1981 & yr <= 1992) 
+  filter(yr >= 2003 & yr <= 2018) 
 
 Counties.sf <- us_counties(resolution = "low") %>%
   filter(!state_name %in% c("Alaska", "Hawaii", "Puerto Rico"))
 
+States.sf <- us_states(resolution = "low") %>%
+  filter(!state_name %in% c("Alaska", "Hawaii"))
+
+CountyArea <- st_area(Counties.sf)
+
 counts.v <- NULL
-for(year in 1981:1990){
+for(year in 2003:2018){
   print(year)
   tracks <- Tracks.sf %>%
     filter(yr == year)
   mtrx <- st_intersects(Counties.sf, 
                         tracks, 
                         sparse = FALSE)
-  counts.v <- c(rowSums(mtrx), counts.v)
+  counts.v <- c(counts.v, rowSums(mtrx))
 }
 
-years <- year(seq(as_date("1981-01-01"), 
-                  as_date("1990-12-31"), 
+years <- year(seq(as_date("2003-01-01"), 
+                  as_date("2018-01-01"), 
                   by = "year"))
 
 d <- st_dimensions(location = Counties.sf$geometry, 
@@ -255,15 +260,29 @@ d <- st_dimensions(location = Counties.sf$geometry,
 
 
 counts.st <- counts.st %>%
+      mutate(countsD = cut(counts, breaks = c(0, 1, 2, 4, 8, Inf), right = FALSE))
+
+
+counts.st <- counts.st %>%
   st_transform(crs = "+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=37.5 +lon_0=-96 +x_0=0 +y_0=0 +datum=NAD83 +units=m +no_defs")
+
+States.sf <- States.sf %>%
+  st_transform(crs = "+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=37.5 +lon_0=-96 +x_0=0 +y_0=0 +datum=NAD83 +units=m +no_defs")
+
 ggplot() +  
-  geom_stars(data = counts.st, alpha = .8, downsample = c(1, 1, 1)) + 
-  facet_wrap("year") +
-  scale_fill_viridis_c() +
+  geom_stars(data = counts.st, aes(fill = countsD)) + 
+  facet_wrap(~ year) +
+#  scale_fill_viridis_d(labels = c("0", "1", "2-3", "4-8", ">8")) +
+  scale_fill_manual(values = c("gray70", "#404788FF",  "#1F968BFF", "#73D055FF", "#FDE725FF"),
+                    labels = c("0", "1", "2-3", "4-8", ">8")) +
+  geom_sf(data = States.sf, col = "white", fill = "transparent", size = .1) +
   coord_sf() +
   theme_map() +
-  theme(legend.position = "bottom") +
-  theme(legend.key.width = unit(2, "cm"))
+  theme(legend.position = "top") +
+  theme(legend.key.width = unit(.5, "cm")) +
+  labs(fill = "",
+       title = "Annual tornado occurrences by county",
+       caption = "Data Source: NOAA SPC")
 
 ```
 
