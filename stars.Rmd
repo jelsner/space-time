@@ -286,64 +286,6 @@ ggplot() +
 
 ```
 
-
-## Compute the range of the spatial autocorrelation 
-
-Convert stars to raster brick.
-```{r}
-# X.b <- as(X, "Raster")
-X.tmax <- as(X["tmax",,,], "Raster")
-X.tmin <- as(X["tmin",,,], "Raster")
-```
-
-Spatial autocorrelation range.
-```{r}
-library(blockCV)
-
-sac <- spatialAutoRange(rasterLayer = X.tmin[[1]],
-                        sampleNumber = 1500,
-                        doParallel = TRUE,
-                        plotVariograms = TRUE,
-                        showPlots = TRUE)
-
-sac$variograms$var_model
-```
-
-Loop over all days.
-```{r}
-X.tmax <- projectRaster(X.tmax, crs = "+proj=lcc +lat_1=33 +lat_2=45 +lat_0=39 +lon_0=-96 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs")
-X.tmin <- projectRaster(X.tmin, crs = "+proj=lcc +lat_1=33 +lat_2=45 +lat_0=39 +lon_0=-96 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs")
-
-tmaxACR <- NULL
-tminACR <- NULL
-for(i in 1:31){
-tmaxACR[i] <- spatialAutoRange(rasterLayer = X.tmax[[i]],
-                         sampleNumber = 1500,
-                         doParallel = TRUE,
-                         showPlots = FALSE)$variograms$var_model$range[2]
-tminACR[i] <- spatialAutoRange(rasterLayer = X.tmin[[i]],
-                         sampleNumber = 1500,
-                         doParallel = TRUE,
-                         showPlots = FALSE)$variograms$var_model$range[2]
-}
-
-df <- data.frame(Variable = c(rep("Tmax", times = length(tmaxACR)), rep("Tmin", times = length(tminACR))),
-                 ACR = c(tmaxACR, tminACR))
-
-ggplot(data = df,
-       mapping = aes(x = log(ACR), color = Variable)) +
-  geom_density()
-```
-
-If the domain is too large, clear calm nights will result in a trend that will overwhelm the local spatial autocorrelation.
-
-## Vector data cubes
-
-```{r}
-library(spacetime)
-data(air)
-```
-
 ## Covid data
 
 Data source: https://usafacts.org/visualizations/coronavirus-covid-19-spread-map/
@@ -507,3 +449,60 @@ bar_chart_race2(df = st.df,
                title = "Florida county-level covid death rates (/100,000)")
 
 ```
+
+## Vector data cubes
+
+```{r}
+library(spacetime)
+data(air)
+```
+
+## Compute the range of the spatial autocorrelation 
+
+Convert stars to raster brick.
+```{r}
+# X.b <- as(X, "Raster")
+X.tmax <- as(X["tmax",,,], "Raster")
+X.tmin <- as(X["tmin",,,], "Raster")
+```
+
+Spatial autocorrelation range.
+```{r}
+library(blockCV)
+
+sac <- spatialAutoRange(rasterLayer = X.tmin[[1]],
+                        sampleNumber = 1500,
+                        doParallel = TRUE,
+                        plotVariograms = TRUE,
+                        showPlots = TRUE)
+
+sac$variograms$var_model
+```
+
+Loop over all days.
+```{r}
+X.tmax <- projectRaster(X.tmax, crs = "+proj=lcc +lat_1=33 +lat_2=45 +lat_0=39 +lon_0=-96 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs")
+X.tmin <- projectRaster(X.tmin, crs = "+proj=lcc +lat_1=33 +lat_2=45 +lat_0=39 +lon_0=-96 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs")
+
+tmaxACR <- NULL
+tminACR <- NULL
+for(i in 1:31){
+tmaxACR[i] <- spatialAutoRange(rasterLayer = X.tmax[[i]],
+                         sampleNumber = 1500,
+                         doParallel = TRUE,
+                         showPlots = FALSE)$variograms$var_model$range[2]
+tminACR[i] <- spatialAutoRange(rasterLayer = X.tmin[[i]],
+                         sampleNumber = 1500,
+                         doParallel = TRUE,
+                         showPlots = FALSE)$variograms$var_model$range[2]
+}
+
+df <- data.frame(Variable = c(rep("Tmax", times = length(tmaxACR)), rep("Tmin", times = length(tminACR))),
+                 ACR = c(tmaxACR, tminACR))
+
+ggplot(data = df,
+       mapping = aes(x = log(ACR), color = Variable)) +
+  geom_density()
+```
+
+If the domain is too large, clear calm nights will result in a trend that will overwhelm the local spatial autocorrelation.
